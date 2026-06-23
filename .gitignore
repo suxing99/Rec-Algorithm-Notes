@@ -99,6 +99,7 @@ Desktop.ini
 # Logs
 *.log
 logs/
+lightning_logs/
 
 # Local config / secrets
 .env.local

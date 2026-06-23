@@ -44,7 +44,8 @@ pip install -r requirements.txt
 
 - 协同过滤（UserCF / ItemCF）
 - 矩阵分解（MF、SVD、ALS）
-- 深度学习推荐（DeepFM、Wide & Deep 等）
+- 深度学习推荐（DeepFM、Wide & Deep 、 PNN等）
+- 序列建模（DIN、DIEN、SIM）
 - 序列推荐与召回排序
 
 ## 贡献
