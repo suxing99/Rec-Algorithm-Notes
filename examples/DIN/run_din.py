@@ -18,7 +18,7 @@ def main():
     data_path = Path(__file__).parent / "data" / "din_demo.csv"
     max_seq_len = 20
     batch_size = 256
-    max_epochs = 100
+    max_epochs = 20
     embed_dim = 16
     lr = 1e-3
 
