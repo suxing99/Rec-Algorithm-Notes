@@ -19,3 +19,6 @@ pytest>=7.4.0
 
 # 推荐算法（隐式反馈 MF / ALS 等）
 implicit>=0.7.0
+
+# 深度学习推荐（DIN、YouTube DNN 等）
+torch>=2.0.0

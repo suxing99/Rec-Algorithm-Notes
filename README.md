@@ -8,10 +8,16 @@
 
 ```
 Rec-Algorithm-Notes/
-├── cores/      # 核心算法实现
-├── docs/       # 算法原理与笔记文档
-├── examples/   # 使用示例
-└── tests/      # 单元测试
+├── cores/                  # 核心算法实现（可复用模块）
+│   ├── layers/             # 通用网络层（Attention、Embedding 等）
+│   └── models/             # 模型定义（DIN、YouTube DNN 等）
+├── docs/                   # 算法原理与笔记文档
+├── examples/               # 各算法独立示例（含 data/ 与 run 脚本）
+│   ├── DIN/
+│   └── YouTubeDNNRecall/
+├── tests/                  # 单元测试
+├── requirements.txt        # 基础依赖
+└── requirements-dl.txt     # 深度学习依赖（含 torch）
 ```
 
 ## 环境要求
@@ -29,8 +35,9 @@ cd Rec-Algorithm-Notes
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# 安装依赖（如有 requirements.txt）
+# 安装依赖
 pip install -r requirements.txt
+
 ```
 
 ## 内容规划

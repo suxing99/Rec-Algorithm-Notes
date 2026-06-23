@@ -125,6 +125,13 @@ models/
 checkpoints/
 weights/
 
+# 允许提交 examples 下的小型 demo 数据
+!examples/**/data/
+!examples/**/data/**
+!examples/**/data/**/*.csv
+!examples/**/data/**/*.tsv
+!examples/**/data/**/*.json
+
 # Temporary files
 tmp/
 temp/
