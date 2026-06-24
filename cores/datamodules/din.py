@@ -1,4 +1,4 @@
-"""DIN 数据集与 demo 数据生成（基于 Hugging Face datasets）。"""
+"""DIN DataModule 与 demo 数据生成（基于 Hugging Face datasets）。"""
 
 import csv
 from pathlib import Path

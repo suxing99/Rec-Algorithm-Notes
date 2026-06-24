@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from cores.models.din import DIN
-from cores.utils.dataset import DINDataModule
+from cores.datamodules.din import DINDataModule
 
 
 def main():

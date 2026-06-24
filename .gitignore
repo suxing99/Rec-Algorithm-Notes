@@ -1,140 +1,19 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+# 白名单：仅跟踪 cores、examples、README、requirements
+*
 
-# C extensions
-*.so
+!.gitignore
+!README.md
+!requirements*.txt
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+!cores/
+!cores/**
 
-# Virtual environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+!examples/
+!examples/**
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Unit test / coverage
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Type checkers
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
-.pytype/
-.ruff_cache/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-.python-version
-
-# pipenv
-Pipfile.lock
-
-# Poetry
-poetry.lock
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Logs
-*.log
-logs/
+# 运行时产物（即使在白名单目录内也忽略）
+**/__pycache__/
+**/*.py[cod]
+**/.DS_Store
+.venv/
 lightning_logs/
-
-# Local config / secrets
-.env.local
-.env.*.local
-*.pem
-secrets.json
-credentials.json
-
-# Data & model artifacts (common in rec/ML projects)
-data/raw/
-data/processed/
-*.csv
-*.tsv
-*.parquet
-*.pkl
-*.pickle
-*.h5
-*.hdf5
-*.pt
-*.pth
-*.ckpt
-*.onnx
-models/
-checkpoints/
-weights/
-
-# 允许提交 examples 下的小型 demo 数据
-!examples/**/data/
-!examples/**/data/**
-!examples/**/data/**/*.csv
-!examples/**/data/**/*.tsv
-!examples/**/data/**/*.json
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.bak
