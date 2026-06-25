@@ -1,6 +1,6 @@
 """Deep Interest Evolution Network (DIEN) 模型。"""
 
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, Literal, Tuple, Union
 
 import lightning.pytorch as pl
 import torch
@@ -10,7 +10,10 @@ from torch.optim import Adam
 from torchmetrics.classification import BinaryAUROC
 
 from cores.layers.activations import Dice
+from cores.layers.attention import LocalActivationUnit
 from cores.layers.gru import AUGRU
+
+EvolveAttnMode = Literal["din", "dien"]
 
 
 class DIEN(pl.LightningModule):
@@ -23,6 +26,10 @@ class DIEN(pl.LightningModule):
         - item_id: 候选 item ID（与历史行为共享 embedding）
         - category_id: 候选 item 类目
         - hist_item_ids: 用户历史点击 item 序列（0 为 padding）
+
+    evolve_attn_mode:
+        - "din": DIN 局部激活单元（LocalActivationUnit），默认
+        - "dien": 论文原始双线性 attention + softmax
     """
 
     def __init__(
@@ -36,14 +43,19 @@ class DIEN(pl.LightningModule):
         mlp_dims: Tuple[int, ...] = (128, 64),
         dropout: float = 0.2,
         aux_loss_weight: float = 0.1,
+        evolve_attn_mode: EvolveAttnMode = "din",
         lr: float = 1e-3,
     ):
         super().__init__()
+        if evolve_attn_mode not in ("din", "dien"):
+            raise ValueError(f"evolve_attn_mode 必须是 'din' 或 'dien'，收到: {evolve_attn_mode}")
+
         self.save_hyperparameters(ignore=["mlp_dims"])
         self.max_seq_len = max_seq_len
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
         self.aux_loss_weight = aux_loss_weight
+        self.evolve_attn_mode = evolve_attn_mode
 
         self.user_embedding = nn.Embedding(num_users + 1, embed_dim, padding_idx=0)
         self.item_embedding = nn.Embedding(num_items + 1, embed_dim, padding_idx=0)
@@ -52,8 +64,14 @@ class DIEN(pl.LightningModule):
         self.interest_extractor = nn.GRU(
             embed_dim, hidden_dim, batch_first=True
         )
-        self.evolve_attention = nn.Linear(hidden_dim, embed_dim)
         self.aux_proj = nn.Linear(hidden_dim, embed_dim)
+
+        if evolve_attn_mode == "din":
+            self.state_proj = nn.Linear(hidden_dim, embed_dim)
+            self.local_attention = LocalActivationUnit(embed_dim)
+        else:
+            self.evolve_attention = nn.Linear(hidden_dim, embed_dim)
+
         self.interest_evolver = AUGRU(hidden_dim, hidden_dim)
 
         self.mlp = self._build_mlp(embed_dim * 3 + hidden_dim, mlp_dims, dropout)
@@ -84,7 +102,29 @@ class DIEN(pl.LightningModule):
         ad_emb: torch.Tensor,
         mask: torch.Tensor,
     ) -> torch.Tensor:
-        """计算兴趣演化层 attention 权重。"""
+        """计算兴趣演化层 attention 权重，供 AUGRU 门控使用。"""
+        if self.evolve_attn_mode == "din":
+            return self._compute_evolve_attention_din(interest_states, ad_emb, mask)
+        return self._compute_evolve_attention_dien(interest_states, ad_emb, mask)
+
+    def _compute_evolve_attention_din(
+        self,
+        interest_states: torch.Tensor,
+        ad_emb: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """DIN 局部激活：MLP([ad, h, ad-h, ad*h]) + sigmoid。"""
+        keys = self.state_proj(interest_states)
+        _, weights = self.local_attention(ad_emb, keys, mask)
+        return weights
+
+    def _compute_evolve_attention_dien(
+        self,
+        interest_states: torch.Tensor,
+        ad_emb: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """论文原始方式：双线性打分 + softmax。"""
         att_proj = self.evolve_attention(interest_states)
         scores = (att_proj * ad_emb.unsqueeze(1)).sum(dim=-1)
         scores = scores.masked_fill(mask == 0, float("-inf"))

@@ -23,6 +23,7 @@ def main():
     embed_dim = 16
     hidden_dim = 16
     aux_loss_weight = 0.1
+    evolve_attn_mode = "din"  # "din" | "dien"
     lr = 1e-3
 
     datamodule = DINDataModule(
@@ -41,6 +42,7 @@ def main():
         hidden_dim=hidden_dim,
         max_seq_len=max_seq_len,
         aux_loss_weight=aux_loss_weight,
+        evolve_attn_mode=evolve_attn_mode,
         lr=lr,
     )
 
@@ -74,6 +76,7 @@ def main():
         f"物品数: {stats['num_items']}, "
         f"类目数: {stats['num_categories']}"
     )
+    print(f"演化层 attention: {evolve_attn_mode}")
     print("-" * 60)
 
     trainer.fit(model, datamodule=datamodule)
