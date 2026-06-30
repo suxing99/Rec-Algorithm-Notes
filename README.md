@@ -47,6 +47,7 @@ pip install -r requirements.txt
 - 深度学习推荐（DeepFM、Wide & Deep 、 PNN等）
 - 序列建模（DIN、DIEN、SIM）
 - 序列推荐与召回排序
+- 特征交叉（DCN V2）
 
 ## 贡献
 
