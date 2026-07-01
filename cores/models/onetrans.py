@@ -8,7 +8,9 @@ import torch.nn.functional as F
 from torch import nn
 from torch.optim import Adam
 
+from cores.datamodules.two_tower import log_stage
 from cores.layers.onetrans import OneTransStack, RMSNorm
+from cores.utils.metrics import group_ranking_metrics
 
 
 # 与特征表对齐：上线特征，排除仅训练使用的 pos
@@ -96,6 +98,10 @@ class OneTrans(pl.LightningModule):
         self.ns_num_tokens = ns_num_tokens
         self.target_log1p = target_log1p
         self.lr = lr
+
+        self._val_preds: List[torch.Tensor] = []
+        self._val_labels: List[torch.Tensor] = []
+        self._val_group_ids: List[str] = []
 
         self.user_num_dim = feature_stats["user_num_dim"]
         self.num_feats_dim = feature_stats["num_feats_dim"]
@@ -257,8 +263,62 @@ class OneTrans(pl.LightningModule):
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         return self._shared_step(batch, "train")
 
+    def on_validation_epoch_start(self) -> None:
+        self._val_preds.clear()
+        self._val_labels.clear()
+        self._val_group_ids.clear()
+
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        return self._shared_step(batch, "val")
+        y = batch["recharge_30d"].float()
+        pred = self(batch)
+        target = self._transform_target(y)
+        loss = F.huber_loss(pred, target, delta=1.0)
+
+        with torch.no_grad():
+            pred_ltv = self._inverse_transform_pred(pred)
+            mae = (pred_ltv - y).abs().mean()
+            rmse = ((pred_ltv - y) ** 2).mean().sqrt()
+
+        batch_size = y.size(0)
+        self.log("val_loss", loss, prog_bar=True, batch_size=batch_size)
+        self.log("val_mae", mae, prog_bar=True, batch_size=batch_size)
+        self.log("val_rmse", rmse, batch_size=batch_size)
+
+        self._val_preds.append(pred_ltv.detach().cpu())
+        self._val_labels.append(y.detach().cpu())
+        versionv = batch["versionv"]
+        if isinstance(versionv, (list, tuple)):
+            self._val_group_ids.extend(versionv)
+        else:
+            self._val_group_ids.append(versionv)
+
+        return loss
+
+    def on_validation_epoch_end(self) -> None:
+        preds = torch.cat(self._val_preds).numpy()
+        labels = torch.cat(self._val_labels).numpy()
+        metrics = group_ranking_metrics(
+            self._val_group_ids,
+            preds,
+            labels,
+            positive_threshold=0.0,
+            ks=(1, 3),
+        )
+
+        num_groups = int(metrics["num_groups"])
+        self.log("val_mrr", metrics["mrr"], prog_bar=True, on_epoch=True)
+        self.log("val_hit@1", metrics["hit@1"], prog_bar=True, on_epoch=True)
+        self.log("val_hit@3", metrics["hit@3"], prog_bar=True, on_epoch=True)
+
+        if num_groups > 0:
+            log_stage(
+                f"验证排序指标 (有效推荐组 {num_groups}): "
+                f"MRR={metrics['mrr']:.4f}, "
+                f"Hit@1={metrics['hit@1']:.4f}, "
+                f"Hit@3={metrics['hit@3']:.4f}"
+            )
+        else:
+            log_stage("验证排序指标: 无有效推荐组（所有 versionv 组均无充值）")
 
     def configure_optimizers(self):
         return Adam(self.parameters(), lr=self.lr)

@@ -117,7 +117,10 @@ def get_feature_stats(train_ds: Dataset, val_ds: Dataset) -> Dict[str, int]:
 
 
 def _preprocess_example(example: Dict, max_seq_len: int, feature_dims: Dict[str, int]) -> Dict:
-    result: Dict = {"recharge_30d": float(example["recharge_30d"])}
+    result: Dict = {
+        "recharge_30d": float(example["recharge_30d"]),
+        "versionv": example["versionv"],
+    }
     result[CANDIDATE_GAME_FIELD] = int(example[CANDIDATE_GAME_FIELD])
 
     for field in NS_CAT_FIELDS:
@@ -204,6 +207,7 @@ class OneTransDataModule(pl.LightningDataModule):
         cols.extend(NUM_FEAT_FIELDS)
         cols.append(CANDIDATE_GAME_FIELD)
         cols.append("recharge_30d")
+        cols.append("versionv")
         return cols
 
     def setup(self, stage: Optional[str] = None) -> None:
