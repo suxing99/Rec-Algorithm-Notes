@@ -1,0 +1,31 @@
+# OneTrans LTV30 训练配置（修改本文件后直接运行 run_onetrans.py）
+
+data:
+  train_path: examples/OneTrans/data/train_data.parquet
+  val_path: examples/OneTrans/data/val_data.parquet
+
+model:
+  embed_dim: 16
+  d_model: 32
+  num_heads: 4
+  num_layers: 4
+  ns_num_tokens: 8
+  max_seq_len: 30
+  ffn_ratio: 4.0
+  dropout: 0.1
+  min_s_keep: 4
+  target_log1p: true
+  lr: 0.001
+
+train:
+  batch_size: 128
+  max_epochs: 20
+  num_workers: 0
+
+trainer:
+  log_every_n_steps: 10
+  early_stop_patience: 3
+
+logging:
+  save_dir: lightning_logs
+  name: onetrans
