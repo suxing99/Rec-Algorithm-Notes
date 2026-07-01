@@ -1,0 +1,29 @@
+# DIEN 训练配置（修改本文件后直接运行 run_dien.py）
+
+data:
+  data_path: examples/DIN/data/din_demo.csv
+  val_ratio: 0.2
+  seed: 42
+
+model:
+  embed_dim: 16
+  hidden_dim: 16
+  max_seq_len: 20
+  mlp_dims: [128, 64]
+  dropout: 0.2
+  aux_loss_weight: 0.1
+  evolve_attn_mode: din  # din | dien
+  lr: 0.001
+
+train:
+  batch_size: 256
+  max_epochs: 20
+  num_workers: 0
+
+trainer:
+  log_every_n_steps: 10
+  early_stop_patience: 5
+
+logging:
+  save_dir: lightning_logs
+  name: dien
