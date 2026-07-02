@@ -51,6 +51,8 @@ model:
     game_id: 64
     recharge_type: 8
     seq_type: 4
+  # game_id / channel_game / 序列 game 共用的预训练向量（可选，npy 形状: [num_game+1, game_id_dim]）
+  game_emb_path: examples/OneTrans/data/game_emb.npy
   d_model: 32
   num_heads: 4
   num_layers: 4

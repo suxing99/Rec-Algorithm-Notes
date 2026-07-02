@@ -1,8 +1,10 @@
 """OneTrans 模型：统一序列与非序列特征的 Transformer 精排骨干。"""
 
-from typing import Any, Dict, List, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import lightning.pytorch as pl
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -89,6 +91,53 @@ def normalize_embed_dims(
     return raw
 
 
+def init_game_embedding_from_file(
+    embedding: nn.Embedding,
+    path: Path,
+    num_games: int,
+) -> int:
+    """
+    用预训练矩阵初始化 game embedding。
+
+    约定：npy 形状为 (num_rows, embed_dim)，第 i 行对应 game_id=i（0 行为 padding）。
+    返回实际加载的行数。
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"game embedding 文件不存在: {path}")
+
+    weights = np.load(path)
+    if weights.ndim != 2:
+        raise ValueError(f"game embedding 需为二维矩阵，当前 shape={weights.shape}")
+
+    file_rows, file_dim = weights.shape
+    embed_dim = embedding.embedding_dim
+    if file_dim != embed_dim:
+        raise ValueError(
+            f"game embedding 维度 {file_dim} 与 game_id 配置维度 {embed_dim} 不一致"
+        )
+
+    vocab_size = num_games + 1
+    copy_rows = min(file_rows, vocab_size)
+    with torch.no_grad():
+        embedding.weight.zero_()
+        embedding.weight[:copy_rows].copy_(
+            torch.from_numpy(weights[:copy_rows].astype(np.float32, copy=False))
+        )
+
+    if file_rows < vocab_size:
+        log_stage(
+            f"  game embedding 仅覆盖 id 0..{file_rows - 1}，"
+            f"词表需要 0..{num_games}，其余 id 保持零向量"
+        )
+    elif file_rows > vocab_size:
+        log_stage(
+            f"  game embedding 文件共 {file_rows} 行，"
+            f"仅加载前 {copy_rows} 行（匹配词表 num_games={num_games}）"
+        )
+    return copy_rows
+
+
 class OneTrans(pl.LightningModule):
     """
     OneTrans: Unified Feature Interaction and Sequence Modeling with One Transformer.
@@ -118,6 +167,7 @@ class OneTrans(pl.LightningModule):
         min_s_keep: int = 4,
         lr: float = 1e-3,
         target_log1p: bool = True,
+        game_emb_path: Optional[Path] = None,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["feature_stats"])
@@ -160,6 +210,16 @@ class OneTrans(pl.LightningModule):
             self._field_dim(CANDIDATE_GAME_FIELD),
             padding_idx=0,
         )
+        if game_emb_path is not None:
+            loaded = init_game_embedding_from_file(
+                self.game_embedding,
+                Path(game_emb_path),
+                feature_stats["num_games"],
+            )
+            log_stage(
+                f"  game_id embedding 已从文件初始化: {game_emb_path} "
+                f"({loaded} 行, dim={self._field_dim(CANDIDATE_GAME_FIELD)})"
+            )
         self.recharge_type_embedding = nn.Embedding(
             feature_stats["num_recharge_types"] + 1,
             self._field_dim("recharge_type"),

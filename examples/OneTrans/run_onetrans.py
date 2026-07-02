@@ -98,6 +98,7 @@ def load_config(config_path: Path = CONFIG_PATH) -> SimpleNamespace:
         min_s_keep=int(model.get("min_s_keep", 4)),
         target_log1p=bool(model.get("target_log1p", True)),
         lr=float(model.get("lr", 1e-3)),
+        game_emb_path=_resolve_path(model.get("game_emb_path"), ROOT),
         batch_size=int(train.get("batch_size", 128)),
         max_epochs=int(train.get("max_epochs", 30)),
         num_workers=int(train.get("num_workers", 0)),
@@ -144,6 +145,7 @@ def main() -> None:
         min_s_keep=cfg.min_s_keep,
         target_log1p=cfg.target_log1p,
         lr=cfg.lr,
+        game_emb_path=cfg.game_emb_path,
     )
 
     checkpoint_callback = ModelCheckpoint(
