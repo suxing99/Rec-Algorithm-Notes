@@ -20,14 +20,14 @@ data:
 
 model:
   embed_dim: 16   # 默认 embedding 维度（未在 embed_dims 中单独配置的字段使用此值）
-  embed_dims:   # 按字段覆盖维度（共 27 个离散特征，未列出的字段使用 embed_dim）
+  embed_dims:   # 按字段覆盖维度（channel_game 与 game_id 共享，仅配置 game_id）
     # 单值类别 (NS_CAT_FIELDS)
     model: 16
     channel: 16
     version: 8
     network: 4
     platform: 4
-    channel_game: 16
+    # channel_game 与 game_id 共享 embedding，维度见下方 game_id
     page_num: 4
     hour: 4
     week: 4
@@ -47,7 +47,7 @@ model:
     top2_tag_id: 8
     welfare_tag_id: 8
     feature_tag_id: 8
-    # 候选 / 序列
+    # 候选 / 序列（channel_game 复用 game_id embedding）
     game_id: 64
     recharge_type: 8
     seq_type: 4

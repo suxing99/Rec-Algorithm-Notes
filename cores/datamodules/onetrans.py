@@ -106,6 +106,8 @@ def get_feature_stats(train_ds: Dataset, val_ds: Dataset) -> Dict[str, int]:
     for t in tables:
         if CANDIDATE_GAME_FIELD in t.column_names:
             game_max = max(game_max, _scalar_max(t, CANDIDATE_GAME_FIELD))
+        if "channel_game" in t.column_names:
+            game_max = max(game_max, _scalar_max(t, "channel_game"))
         for field, seq_type in SEQ_FIELDS:
             col_max = _list_max(t, field)
             if seq_type == "game":

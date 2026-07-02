@@ -59,9 +59,12 @@ NUM_FEAT_FIELDS = ["user_num_feats", "num_feats", "cross_num_feats"]
 # 候选游戏 ID（与行为序列中的 game id 共享 embedding）
 CANDIDATE_GAME_FIELD = "game_id"
 
+# 与 game_id 共享 game_embedding 的类别字段
+SHARED_GAME_CAT_FIELDS = frozenset({"channel_game"})
+
 # 支持单独配置 embedding 维度的离散特征
 EMBEDDING_FIELDS = (
-    list(NS_CAT_FIELDS)
+    [f for f in NS_CAT_FIELDS if f not in SHARED_GAME_CAT_FIELDS]
     + list(NS_MULTI_CAT_FIELDS)
     + [CANDIDATE_GAME_FIELD, "recharge_type", "seq_type"]
 )
@@ -74,10 +77,16 @@ def normalize_embed_dims(
     """解析 embed_dims 覆盖项，未配置字段回退到 embed_dim。"""
     if not embed_dims:
         return {}
-    unknown = set(embed_dims) - set(EMBEDDING_FIELDS)
+    raw = {field: int(dim) for field, dim in embed_dims.items()}
+    if "channel_game" in raw:
+        if CANDIDATE_GAME_FIELD in raw and raw["channel_game"] != raw[CANDIDATE_GAME_FIELD]:
+            raise ValueError("channel_game 与 game_id 共享 embedding，维度需一致")
+        raw.setdefault(CANDIDATE_GAME_FIELD, raw["channel_game"])
+        del raw["channel_game"]
+    unknown = set(raw) - set(EMBEDDING_FIELDS)
     if unknown:
         raise ValueError(f"embed_dims 含未知字段: {sorted(unknown)}")
-    return {field: int(dim) for field, dim in embed_dims.items()}
+    return raw
 
 
 class OneTrans(pl.LightningModule):
@@ -129,9 +138,11 @@ class OneTrans(pl.LightningModule):
         self.num_feats_dim = feature_stats["num_feats_dim"]
         self.cross_num_dim = feature_stats["cross_num_dim"]
 
-        # 类别 embedding（各字段可独立维度）
+        # 类别 embedding（channel_game 与 game_id 共享 game_embedding）
         self.cat_embeddings = nn.ModuleDict()
         for field in NS_CAT_FIELDS:
+            if field in SHARED_GAME_CAT_FIELDS:
+                continue
             vocab = feature_stats[f"num_{field}"] + 1
             self.cat_embeddings[field] = nn.Embedding(
                 vocab, self._field_dim(field), padding_idx=0
@@ -172,7 +183,12 @@ class OneTrans(pl.LightningModule):
 
         # Auto-Split NS tokenizer（含候选 game_id embedding）
         ns_input_dim = (
-            sum(self._field_dim(field) for field in NS_CAT_FIELDS)
+            sum(
+                self._field_dim(CANDIDATE_GAME_FIELD)
+                if field in SHARED_GAME_CAT_FIELDS
+                else self._field_dim(field)
+                for field in NS_CAT_FIELDS
+            )
             + sum(self._field_dim(field) for field in NS_MULTI_CAT_FIELDS)
             + self._field_dim(CANDIDATE_GAME_FIELD)
             + self.user_num_dim
@@ -218,7 +234,10 @@ class OneTrans(pl.LightningModule):
     def _tokenize_ns(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         parts = []
         for field in NS_CAT_FIELDS:
-            parts.append(self.cat_embeddings[field](batch[field]))
+            if field in SHARED_GAME_CAT_FIELDS:
+                parts.append(self.game_embedding(batch[field]))
+            else:
+                parts.append(self.cat_embeddings[field](batch[field]))
         for field in NS_MULTI_CAT_FIELDS:
             parts.append(self._embed_multi_cat(field, batch[field]))
         parts.append(self.game_embedding(batch[CANDIDATE_GAME_FIELD]))
