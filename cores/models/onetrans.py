@@ -412,6 +412,14 @@ class OneTrans(pl.LightningModule):
 
         return loss
 
+    def _callback_metric(self, name: str) -> float:
+        value = self.trainer.callback_metrics.get(name)
+        if value is None:
+            return float("nan")
+        if isinstance(value, torch.Tensor):
+            return float(value.detach().cpu())
+        return float(value)
+
     def on_validation_epoch_end(self) -> None:
         preds = torch.cat(self._val_preds).numpy()
         labels = torch.cat(self._val_labels).numpy()
@@ -428,15 +436,24 @@ class OneTrans(pl.LightningModule):
         self.log("val_hit@1", metrics["hit@1"], prog_bar=True, on_epoch=True)
         self.log("val_hit@3", metrics["hit@3"], prog_bar=True, on_epoch=True)
 
+        val_loss = self._callback_metric("val_loss")
+        val_mae = self._callback_metric("val_mae")
+        val_rmse = self._callback_metric("val_rmse")
+
         if num_groups > 0:
             log_stage(
-                f"验证排序指标 (有效推荐组 {num_groups}): "
-                f"MRR={metrics['mrr']:.4f}, "
-                f"Hit@1={metrics['hit@1']:.4f}, "
-                f"Hit@3={metrics['hit@3']:.4f}"
+                f"验证指标: val_loss={val_loss:.4f}, val_mae={val_mae:.4f}, "
+                f"val_rmse={val_rmse:.4f}, MRR={metrics['mrr']:.4f}, "
+                f"Hit@1={metrics['hit@1']:.4f}, Hit@3={metrics['hit@3']:.4f} "
+                f"(有效推荐组 {num_groups})",
+                newline_before=True,
             )
         else:
-            log_stage("验证排序指标: 无有效推荐组（所有 versionv 组均无充值）")
+            log_stage(
+                f"验证指标: val_loss={val_loss:.4f}, val_mae={val_mae:.4f}, "
+                f"val_rmse={val_rmse:.4f}; 排序指标无有效推荐组（所有 versionv 组均无充值）",
+                newline_before=True,
+            )
 
     def configure_optimizers(self):
         return Adam(self.parameters(), lr=self.lr)

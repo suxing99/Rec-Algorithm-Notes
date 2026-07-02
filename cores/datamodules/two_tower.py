@@ -13,8 +13,12 @@ from torch.utils.data import DataLoader
 GameSequence = Union[str, Sequence[int]]
 
 
-def log_stage(message: str) -> None:
-    print(message, flush=True)
+def log_stage(message: str, *, newline_before: bool = False) -> None:
+    """打印阶段日志；newline_before=True 时先换行，避免与 tqdm 进度条粘在同一行。"""
+    if newline_before:
+        print(f"\n{message}", flush=True)
+    else:
+        print(message, flush=True)
 
 
 def parse_game_sequence(seq: GameSequence) -> List[int]:
