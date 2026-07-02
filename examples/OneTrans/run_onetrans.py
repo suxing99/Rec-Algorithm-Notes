@@ -84,6 +84,10 @@ def load_config(config_path: Path = CONFIG_PATH) -> SimpleNamespace:
         val_days=val_days,
         val_subdir=val_subdir,
         embed_dim=int(model.get("embed_dim", 16)),
+        embed_dims={
+            str(field): int(dim)
+            for field, dim in (model.get("embed_dims") or {}).items()
+        },
         d_model=int(model.get("d_model", 64)),
         num_heads=int(model.get("num_heads", 4)),
         num_layers=int(model.get("num_layers", 4)),
@@ -129,6 +133,7 @@ def main() -> None:
     model = OneTrans(
         feature_stats=datamodule.feature_stats,
         embed_dim=cfg.embed_dim,
+        embed_dims=cfg.embed_dims,
         d_model=cfg.d_model,
         num_heads=cfg.num_heads,
         num_layers=cfg.num_layers,

@@ -59,6 +59,26 @@ NUM_FEAT_FIELDS = ["user_num_feats", "num_feats", "cross_num_feats"]
 # 候选游戏 ID（与行为序列中的 game id 共享 embedding）
 CANDIDATE_GAME_FIELD = "game_id"
 
+# 支持单独配置 embedding 维度的离散特征
+EMBEDDING_FIELDS = (
+    list(NS_CAT_FIELDS)
+    + list(NS_MULTI_CAT_FIELDS)
+    + [CANDIDATE_GAME_FIELD, "recharge_type", "seq_type"]
+)
+
+
+def normalize_embed_dims(
+    embed_dim: int,
+    embed_dims: Dict[str, int] | None = None,
+) -> Dict[str, int]:
+    """解析 embed_dims 覆盖项，未配置字段回退到 embed_dim。"""
+    if not embed_dims:
+        return {}
+    unknown = set(embed_dims) - set(EMBEDDING_FIELDS)
+    if unknown:
+        raise ValueError(f"embed_dims 含未知字段: {sorted(unknown)}")
+    return {field: int(dim) for field, dim in embed_dims.items()}
+
 
 class OneTrans(pl.LightningModule):
     """
@@ -77,6 +97,7 @@ class OneTrans(pl.LightningModule):
         self,
         feature_stats: Dict[str, int],
         embed_dim: int = 16,
+        embed_dims: Dict[str, int] | None = None,
         d_model: int = 64,
         num_heads: int = 4,
         num_layers: int = 4,
@@ -92,6 +113,7 @@ class OneTrans(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(ignore=["feature_stats"])
         self.embed_dim = embed_dim
+        self.embed_dims = normalize_embed_dims(embed_dim, embed_dims)
         self.d_model = d_model
         self.max_seq_len = max_seq_len
         self.num_seqs = num_seqs
@@ -107,38 +129,52 @@ class OneTrans(pl.LightningModule):
         self.num_feats_dim = feature_stats["num_feats_dim"]
         self.cross_num_dim = feature_stats["cross_num_dim"]
 
-        # 类别 embedding
+        # 类别 embedding（各字段可独立维度）
         self.cat_embeddings = nn.ModuleDict()
         for field in NS_CAT_FIELDS:
             vocab = feature_stats[f"num_{field}"] + 1
-            self.cat_embeddings[field] = nn.Embedding(vocab, embed_dim, padding_idx=0)
+            self.cat_embeddings[field] = nn.Embedding(
+                vocab, self._field_dim(field), padding_idx=0
+            )
 
         self.multi_cat_embeddings = nn.ModuleDict()
         for field in NS_MULTI_CAT_FIELDS:
             vocab = feature_stats[f"num_{field}"] + 1
-            self.multi_cat_embeddings[field] = nn.Embedding(vocab, embed_dim, padding_idx=0)
+            self.multi_cat_embeddings[field] = nn.Embedding(
+                vocab, self._field_dim(field), padding_idx=0
+            )
 
         self.game_embedding = nn.Embedding(
-            feature_stats["num_games"] + 1, embed_dim, padding_idx=0
+            feature_stats["num_games"] + 1,
+            self._field_dim(CANDIDATE_GAME_FIELD),
+            padding_idx=0,
         )
         self.recharge_type_embedding = nn.Embedding(
-            feature_stats["num_recharge_types"] + 1, embed_dim, padding_idx=0
+            feature_stats["num_recharge_types"] + 1,
+            self._field_dim("recharge_type"),
+            padding_idx=0,
         )
-        self.seq_type_embedding = nn.Embedding(num_seqs, embed_dim)
+        self.seq_type_embedding = nn.Embedding(
+            num_seqs, self._field_dim("seq_type")
+        )
 
-        # 序列事件投影（S-token 共享）
-        self.seq_event_proj = nn.Sequential(
-            nn.Linear(embed_dim * 2, d_model),
-            nn.GELU(),
-            nn.Linear(d_model, d_model),
-        )
+        # 序列事件投影：game / recharge_type 事件维度可能不同
+        self.seq_event_projs = nn.ModuleDict()
+        for event_type in ("game", "recharge_type"):
+            event_field = CANDIDATE_GAME_FIELD if event_type == "game" else "recharge_type"
+            proj_in_dim = self._field_dim(event_field) + self._field_dim("seq_type")
+            self.seq_event_projs[event_type] = nn.Sequential(
+                nn.Linear(proj_in_dim, d_model),
+                nn.GELU(),
+                nn.Linear(d_model, d_model),
+            )
         self.sep_tokens = nn.Parameter(torch.randn(num_seqs - 1, d_model) * 0.02)
 
         # Auto-Split NS tokenizer（含候选 game_id embedding）
         ns_input_dim = (
-            len(NS_CAT_FIELDS) * embed_dim
-            + len(NS_MULTI_CAT_FIELDS) * embed_dim
-            + embed_dim  # 候选 game_id
+            sum(self._field_dim(field) for field in NS_CAT_FIELDS)
+            + sum(self._field_dim(field) for field in NS_MULTI_CAT_FIELDS)
+            + self._field_dim(CANDIDATE_GAME_FIELD)
             + self.user_num_dim
             + self.num_feats_dim
             + self.cross_num_dim
@@ -167,6 +203,9 @@ class OneTrans(pl.LightningModule):
             nn.Dropout(dropout),
             nn.Linear(d_model, 1),
         )
+
+    def _field_dim(self, field: str) -> int:
+        return self.embed_dims.get(field, self.embed_dim)
 
     def _embed_multi_cat(self, field: str, values: torch.Tensor) -> torch.Tensor:
         """对多值类别做 masked mean pooling。values: (B, max_len)"""
@@ -208,7 +247,7 @@ class OneTrans(pl.LightningModule):
                 torch.full((batch_size, seq_ids.size(1)), seq_idx, device=seq_ids.device)
             )
             event_input = torch.cat([event_emb, type_emb], dim=-1)
-            s_tokens = self.seq_event_proj(event_input)
+            s_tokens = self.seq_event_projs[seq_type](event_input)
 
             mask = (seq_ids != 0).float().unsqueeze(-1)
             s_tokens = s_tokens * mask
