@@ -1,6 +1,7 @@
 """双塔召回 DataModule。"""
 
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
 
@@ -127,25 +128,66 @@ def merge_feature_stats(*stats_list: Dict[str, int]) -> Dict[str, int]:
     return merged
 
 
+def _list_parquet_files(directory: Path) -> List[Path]:
+    """列出目录中的 parquet 数据文件（兼容 Spark part-*.snappy.parquet）。"""
+    return sorted(
+        f
+        for f in directory.iterdir()
+        if f.is_file() and f.name.endswith(".parquet") and not f.name.startswith("_")
+    )
+
+
+def resolve_date_partition_dirs(
+    data_root: Path,
+    end_date: str,
+    days: int,
+    subdir: str = "rank/train",
+) -> List[Path]:
+    """根据截止日期与天数，解析按 datekey 分区的数据目录（新到旧）。"""
+    if days < 1:
+        raise ValueError(f"days 必须 >= 1, 当前: {days}")
+
+    end = datetime.strptime(str(end_date), "%Y%m%d").date()
+    dirs: List[Path] = []
+    for offset in range(days):
+        datekey = (end - timedelta(days=offset)).strftime("%Y%m%d")
+        dir_path = Path(data_root) / datekey / subdir
+        if not dir_path.is_dir():
+            raise FileNotFoundError(f"训练数据目录不存在: {dir_path}")
+        dirs.append(dir_path)
+    return dirs
+
+
+def load_parquet_sources(paths: Sequence[Path]) -> Dataset:
+    """加载多个 parquet 文件或目录，合并为一个 Dataset。"""
+    if not paths:
+        raise ValueError("至少需要一个数据路径")
+
+    all_files: List[str] = []
+    for path in paths:
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"数据路径不存在: {path}")
+        if path.is_dir():
+            parquet_files = _list_parquet_files(path)
+            if not parquet_files:
+                log_stage(f"  跳过无 parquet 文件的目录: {path}")
+                continue
+            all_files.extend(str(f) for f in parquet_files)
+        elif path.name.endswith(".parquet"):
+            all_files.append(str(path))
+        else:
+            raise ValueError(f"不支持的 parquet 路径: {path}")
+
+    if not all_files:
+        raise FileNotFoundError("未找到任何 parquet 文件")
+    log_stage(f"  共加载 {len(all_files)} 个 parquet 文件")
+    return load_dataset("parquet", data_files=all_files, split="train")
+
+
 def load_parquet_source(path: Path) -> Dataset:
     """加载单个 parquet 文件，或 Spark 输出目录下的全部 part-*.parquet。"""
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"数据路径不存在: {path}")
-
-    if path.is_dir():
-        parquet_files = sorted(path.glob("*.parquet"))
-        if not parquet_files:
-            raise FileNotFoundError(f"目录下无 parquet 文件: {path}")
-        return load_dataset(
-            "parquet",
-            data_files=[str(f) for f in parquet_files],
-            split="train",
-        )
-
-    if path.suffix.lower() != ".parquet":
-        raise ValueError(f"不支持的 parquet 路径: {path}")
-    return load_dataset("parquet", data_files=str(path), split="train")
+    return load_parquet_sources([Path(path)])
 
 
 def _preprocess_example(example: Dict, max_seq_len: int, has_temporal: bool) -> Dict:

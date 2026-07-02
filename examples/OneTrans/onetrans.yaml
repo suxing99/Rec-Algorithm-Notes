@@ -1,8 +1,22 @@
 # OneTrans LTV30 训练配置（修改本文件后直接运行 run_onetrans.py）
 
 data:
-  train_path: examples/OneTrans/data/train_data.parquet
-  val_path: examples/OneTrans/data/val_data.parquet
+  # 本地开发：单文件/目录
+  # train_path: examples/OneTrans/data/train_data.parquet
+  # val_path: examples/OneTrans/data/val_data.parquet
+
+  # 服务器按天分区（与 train_path/val_path 二选一，配置后优先使用）
+  data_root: /data4/notebooks/zhuangzhengjie/tj3387_ltv/data
+
+  # 训练集
+  train_end_date: 20260523   # 训练截止日期 (YYYYMMDD)
+  train_days: 40             # 向前取 N 天 → .../20260523/rank/train/ + .../20260522/rank/train/
+  train_subdir: rank/train  # 可选，默认 rank/train
+
+  # 验证集
+  val_end_date: 20260524    # 验证截止日期 (YYYYMMDD)
+  val_days: 1               # 向前取 N 天 → .../20260524/rank/val/
+  val_subdir: rank/train      # 可选，默认 rank/val
 
 model:
   embed_dim: 16
@@ -18,12 +32,12 @@ model:
   lr: 0.001
 
 train:
-  batch_size: 128
+  batch_size: 8192
   max_epochs: 20
-  num_workers: 0
+  num_workers: 16
 
 trainer:
-  log_every_n_steps: 10
+  log_every_n_steps: 100
   early_stop_patience: 3
 
 logging:

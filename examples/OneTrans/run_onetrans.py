@@ -43,12 +43,46 @@ def load_config(config_path: Path = CONFIG_PATH) -> SimpleNamespace:
 
     train_path = _resolve_path(data.get("train_path"), ROOT)
     val_path = _resolve_path(data.get("val_path"), ROOT)
-    if train_path is None or val_path is None:
-        raise ValueError("配置 data.train_path 与 data.val_path 为必填项")
+    data_root = _resolve_path(data.get("data_root"), ROOT)
+    train_end_date = data.get("train_end_date")
+    train_days = data.get("train_days")
+    train_subdir = str(data.get("train_subdir", "rank/train"))
+    val_end_date = data.get("val_end_date")
+    val_days = data.get("val_days")
+    val_subdir = str(data.get("val_subdir", "rank/val"))
+
+    use_date_train = train_end_date is not None or train_days is not None
+    if use_date_train:
+        if train_end_date is None or train_days is None:
+            raise ValueError("按日期加载训练集时，train_end_date 与 train_days 需同时配置")
+        if data_root is None:
+            raise ValueError("按日期加载训练集时，data_root 为必填项")
+        train_days = int(train_days)
+        train_end_date = str(train_end_date)
+    elif train_path is None:
+        raise ValueError("需配置 data.train_path，或 (data_root + train_end_date + train_days)")
+
+    use_date_val = val_end_date is not None or val_days is not None
+    if use_date_val:
+        if val_end_date is None or val_days is None:
+            raise ValueError("按日期加载验证集时，val_end_date 与 val_days 需同时配置")
+        if data_root is None:
+            raise ValueError("按日期加载验证集时，data_root 为必填项")
+        val_days = int(val_days)
+        val_end_date = str(val_end_date)
+    elif val_path is None:
+        raise ValueError("需配置 data.val_path，或 (data_root + val_end_date + val_days)")
 
     return SimpleNamespace(
         train_path=train_path,
         val_path=val_path,
+        data_root=data_root,
+        train_end_date=train_end_date,
+        train_days=train_days,
+        train_subdir=train_subdir,
+        val_end_date=val_end_date,
+        val_days=val_days,
+        val_subdir=val_subdir,
         embed_dim=int(model.get("embed_dim", 16)),
         d_model=int(model.get("d_model", 64)),
         num_heads=int(model.get("num_heads", 4)),
@@ -79,6 +113,13 @@ def main() -> None:
     datamodule = OneTransDataModule(
         train_path=cfg.train_path,
         val_path=cfg.val_path,
+        data_root=cfg.data_root,
+        train_end_date=cfg.train_end_date,
+        train_days=cfg.train_days,
+        train_subdir=cfg.train_subdir,
+        val_end_date=cfg.val_end_date,
+        val_days=cfg.val_days,
+        val_subdir=cfg.val_subdir,
         max_seq_len=cfg.max_seq_len,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
@@ -104,7 +145,7 @@ def main() -> None:
         monitor="val_mae",
         mode="min",
         filename="onetrans-{epoch:02d}-{val_mae:.4f}",
-        save_top_k=1,
+        save_top_k=4,
     )
     early_stop_callback = EarlyStopping(
         monitor="val_mae",

@@ -9,7 +9,12 @@ import numpy as np
 from datasets import Dataset, Value, load_dataset
 from torch.utils.data import DataLoader
 
-from cores.datamodules.two_tower import load_parquet_source, log_stage
+from cores.datamodules.two_tower import (
+    load_parquet_source,
+    load_parquet_sources,
+    log_stage,
+    resolve_date_partition_dirs,
+)
 from cores.models.onetrans import (
     CANDIDATE_GAME_FIELD,
     NS_CAT_FIELDS,
@@ -178,16 +183,30 @@ class OneTransDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        train_path: Path,
-        val_path: Path,
+        train_path: Optional[Path] = None,
+        val_path: Optional[Path] = None,
+        data_root: Optional[Path] = None,
+        train_end_date: Optional[str] = None,
+        train_days: Optional[int] = None,
+        train_subdir: str = "rank/train",
+        val_end_date: Optional[str] = None,
+        val_days: Optional[int] = None,
+        val_subdir: str = "rank/val",
         max_seq_len: int = 30,
         batch_size: int = 256,
         num_workers: int = 0,
         preprocess_num_proc: Optional[int] = None,
     ):
         super().__init__()
-        self.train_path = Path(train_path)
-        self.val_path = Path(val_path)
+        self.train_path = Path(train_path) if train_path is not None else None
+        self.val_path = Path(val_path) if val_path is not None else None
+        self.data_root = Path(data_root) if data_root is not None else None
+        self.train_end_date = train_end_date
+        self.train_days = train_days
+        self.train_subdir = train_subdir
+        self.val_end_date = val_end_date
+        self.val_days = val_days
+        self.val_subdir = val_subdir
         self.max_seq_len = max_seq_len
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -210,6 +229,54 @@ class OneTransDataModule(pl.LightningDataModule):
         cols.append("versionv")
         return cols
 
+    def _load_train_dataset(self) -> Dataset:
+        if self.train_end_date is not None and self.train_days is not None:
+            if self.data_root is None:
+                raise ValueError("使用 train_end_date/train_days 时需配置 data_root")
+            train_dirs = resolve_date_partition_dirs(
+                self.data_root,
+                self.train_end_date,
+                self.train_days,
+                self.train_subdir,
+            )
+            log_stage(
+                f"      按日期加载训练集: 截止 {self.train_end_date}, "
+                f"共 {self.train_days} 天, subdir={self.train_subdir}"
+            )
+            for train_dir in train_dirs:
+                log_stage(f"        - {train_dir}")
+            return _normalize_game_id_column(load_parquet_sources(train_dirs))
+
+        if self.train_path is None:
+            raise ValueError(
+                "需配置 train_path，或 (data_root + train_end_date + train_days)"
+            )
+        return _normalize_game_id_column(load_parquet_source(self.train_path))
+
+    def _load_val_dataset(self) -> Dataset:
+        if self.val_end_date is not None and self.val_days is not None:
+            if self.data_root is None:
+                raise ValueError("使用 val_end_date/val_days 时需配置 data_root")
+            val_dirs = resolve_date_partition_dirs(
+                self.data_root,
+                self.val_end_date,
+                self.val_days,
+                self.val_subdir,
+            )
+            log_stage(
+                f"      按日期加载验证集: 截止 {self.val_end_date}, "
+                f"共 {self.val_days} 天, subdir={self.val_subdir}"
+            )
+            for val_dir in val_dirs:
+                log_stage(f"        - {val_dir}")
+            return _normalize_game_id_column(load_parquet_sources(val_dirs))
+
+        if self.val_path is None:
+            raise ValueError(
+                "需配置 val_path，或 (data_root + val_end_date + val_days)"
+            )
+        return _normalize_game_id_column(load_parquet_source(self.val_path))
+
     def setup(self, stage: Optional[str] = None) -> None:
         if self.train_dataset is not None and self.val_dataset is not None:
             return
@@ -217,11 +284,11 @@ class OneTransDataModule(pl.LightningDataModule):
         setup_started = time.perf_counter()
 
         log_stage("[1/4] 加载训练集 parquet ...")
-        train_ds = _normalize_game_id_column(load_parquet_source(self.train_path))
+        train_ds = self._load_train_dataset()
         log_stage(f"      训练集: {len(train_ds)} 条")
 
         log_stage("[2/4] 加载验证集 parquet ...")
-        val_ds = _normalize_game_id_column(load_parquet_source(self.val_path))
+        val_ds = self._load_val_dataset()
         log_stage(f"      验证集: {len(val_ds)} 条")
 
         log_stage("[3/4] 统计特征词表 ...")
